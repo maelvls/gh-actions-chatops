@@ -40,9 +40,3 @@ resource "google_storage_bucket_object" "index_html" {
   name    = "index.html"
   content = "😅"
 }
-
-resource "google_storage_bucket_iam_member" "member" {
-  bucket = google_storage_bucket.static_site.name
-  role   = "roles/storage.admin"
-  member = "tfstate-sa@tfstate750.iam.gserviceaccount.com"
-}
