@@ -1,0 +1,219 @@
+name: CI
+
+# Github Secrets: GCP_SA_KEY, GCP_SA_EMAIL, GH_TOKEN. See apply_commands.yml for
+# more info.
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  ci:
+    name: "/apply command"
+    runs-on: ubuntu-latest
+    steps:
+      # Check if /apply was issued. If /apply was not issued, all the
+      # following steps will be skipped.
+      - uses: khan/pull-request-comment-trigger@master
+        id: apply_command
+        with:
+          trigger: "/apply"
+          reaction: rocket
+        env:
+          GITHUB_TOKEN: "${{ secrets.GH_TOKEN }}"
+
+      # Detect if this PR has been approved. Inspired from:
+      # https://github.com/taichi/approved-event-action/blob/master/src/main.ts
+      #
+      # Note that since github.event_name is not 'pull_request', we can't
+      # check for github.event.action == 'submitted' and
+      # github.event.review.state == 'approved'. So we have to do a quick
+      # API call:
+      # https://developer.github.com/v3/pulls/reviews/#list-reviews-on-a-pull-request
+      #
+      # We set two output variables:
+      #  - steps.approved.outputs.ref contains the git ref of the PR;
+      #  - steps.approved.outputs.approved contains '1' if PR is approved
+      - name: has this PR been approved?
+        if: steps.apply_command.outputs.triggered == 'true'
+        id: approved
+        run: |
+          if curl -s -H Authorization:"token $GITHUB_TOKEN" "$PR_URL/reviews" | jq -r ".[] | .state" | grep APPROVED; then
+            echo ::set-output name=approved::true
+          else
+            echo ::set-output name=approved::false
+          fi
+          echo ::set-output name=ref::$(curl -s -H "Authorization: token $GITHUB_TOKEN" $PR_URL | jq -r ".head.ref")
+        env:
+          GITHUB_TOKEN: "${{ secrets.GH_TOKEN }}"
+          PR_URL: "${{ github.event.issue.pull_request.url }}"
+
+      # If someone uses `/apply` but the PR hasn't been approved yet, show
+      # a warning and stop.
+      - name: When PR is not approved, send PR comment warning
+        if: steps.apply_command.outputs.triggered == 'true' && steps.approved.outputs.approved != 'true'
+        run: |
+          curl -X POST -d "{\"body\": $(echo "$BODY" | jq -R --slurp ".")}" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/${{github.repository}}/issues/${{github.event.issue.number}}/comments | tee result
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: |
+            :x: The PR has not been approved yet. The `/apply` command must be issued after the PR has been approved.
+
+      # Since the 'issue_comment' event doesn't have a github.ref
+      # associated, we have to retrive it ourselves.
+      - uses: actions/checkout@v2
+        if: steps.apply_command.outputs.triggered == 'true'
+        with:
+          ref: ${{ steps.approved.outputs.ref }}
+
+      - name: Get the artifact ID from the last PR run
+        id: last_pr_run
+        if: steps.apply_command.outputs.triggered == 'true'
+        run: |
+          run_id=$(curl -sX GET -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/repos/${{github.repository}}/actions/runs \
+            | jq -r "[.workflow_runs[] | {run_number:.run_number, run_id: .id, pr: .pull_requests[0] | .number} | select(.pr == $PR_NUMBER)] | max_by(.run_number) | .run_id")
+          echo ::set-output name=run_id::$run_id
+        env:
+          PR_NUMBER: ${{ github.event.issue.number }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      # Download the zip artifact from the latest run for this PR and unzip
+      # it to the folder given in steps.download_artifact.outputs.path.
+      - name: Download artifact from latest PR run
+        id: download_artifact
+        if: steps.apply_command.outputs.triggered == 'true'
+        run: |
+          artifact_url=$(curl -sX GET -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/repos/${{github.repository}}/actions/runs/$RUN_ID/artifacts | jq -r ".artifacts[] | select(.name == \"$ARTIFACT_NAME\") | .archive_download_url")
+          curl -LO -sX GET -H "Authorization: token $GITHUB_TOKEN" "$artifact_url"
+
+          unzip zip -d artifact_folder
+          ls -al artifact_folder
+
+          echo ::set-output name=path::$PWD/artifact_folder
+        env:
+          ARTIFACT_NAME: tf_plan
+          RUN_ID: "${{ steps.last_pr_run.outputs.run_id }}"
+          PR_NUMBER: ${{ github.event.issue.number }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: If download of artifact failed, send a friendly message
+        if: steps.apply_command.outputs.triggered == 'true' && failure()
+        run: |
+          curl -X POST -d "{\"body\": $(echo "$BODY" | jq -R --slurp ".")}" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/${{github.repository}}/issues/$PR_NUMBER/comments | tee result
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{github.event.issue.number}}
+          BODY: |
+            :x: Download of artifact `tf.plan` from the [above comment](https://github.com/${{github.repository}}/pull/${{github.event.issue.number}}#issuecomment-${{steps.plan_comment_id.outputs.comment_id}})) failed during [the `/apply` job](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}). The artifact that had to be downloaded is in [this PR build](https://github.com/${{github.repository}}/actions/runs/${{steps.last_pr_run.outputs.run_id}}).
+
+      # When `/apply` is called, display an empty comment that will be
+      # filled later.
+      - name: PR is approved, send an 'empty' PR comment that will be filled in terraform_apply
+        id: empty_comment_terraform_apply
+        if: steps.apply_command.outputs.triggered == 'true' && steps.approved.outputs.approved == 'true'
+        run: |
+          curl -X POST -d "{\"body\": $(echo "$BODY" | jq -R --slurp ".")}" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/${{github.repository}}/issues/$PR_NUMBER/comments | tee result
+          echo ::set-output name=id::$(jq -r ".id" < result)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{github.event.issue.number}}
+          BODY: |
+            The `terraform apply` is being run [in this job](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}) using the `tf.plan` shown in [the above comment](https://github.com/${{github.repository}}/pull/${{github.event.issue.number}}#issuecomment-${{steps.plan_comment_id.outputs.comment_id}}). The `tf.plan` is [in the artifact of this job](https://github.com/${{github.repository}}/actions/runs/${{steps.last_pr_run.outputs.run_id}}).
+
+            :hourglass_flowing_sand: Command is running, it takes a minute or two... Output will be shown in this comment when it is done.
+
+      # - uses: actions/download-artifact@v1
+      #   with:
+      #     name: tf_plan
+
+      - uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
+        if: steps.apply_command.outputs.triggered == 'true'
+        with:
+          # terraform init still relies on the deprecated
+          # ~/.config/gcloud/application_default_credentials.json, so we
+          # need to tell the action that it should generate it.
+          export_default_credentials: true
+          service_account_email: ${{ secrets.GCP_SA_EMAIL }}
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+
+      - if: steps.apply_command.outputs.triggered == 'true'
+        run: |
+          LATEST=$(curl -s https://checkpoint-api.hashicorp.com/v1/check/terraform | jq -r -M '.current_version')
+          curl -sOL "https://releases.hashicorp.com/terraform/${LATEST}/terraform_${LATEST}_linux_amd64.zip"
+          unzip *.zip
+          sudo install terraform /usr/bin/terraform
+
+      - run: terraform init
+        if: steps.apply_command.outputs.triggered == 'true'
+        env:
+          TF_VAR_github_token: ${{ secrets.GH_TOKEN }}
+
+      # Only apply when it is approved by the code owners. Anyone can run
+      # /apply when the PR is approved.
+      #
+      # Why am I doing "$exit_code" != "0"? That's because for some weird
+      # reason, the exit_code=$() gives a string, not a number, which Bash
+      # does not like ("exit: numeric argument required").
+      - name: terraform apply
+        id: terraform_apply
+        if: steps.apply_command.outputs.triggered == 'true' && steps.approved.outputs.approved == 'true'
+        run: |
+          echo ::set-output name=was_run::true
+          echo $ARTIFACT_PATH && ls -al $ARTIFACT_PATH
+
+          exit_code=$(set -o pipefail; terraform apply -auto-approve -no-color "$ARTIFACT_PATH/tf.plan" 2>&1 | tee tf.apply >/dev/stderr; echo $?)
+          echo ::set-output name=tf_apply::"${exit_code}"
+
+          tf_apply="$(cat tf.apply)"
+          tf_apply="${tf_apply//'%'/'%25'}"
+          tf_apply="${tf_apply//$'\n'/'%0A'}"
+          tf_apply="${tf_apply//$'\r'/'%0D'}"
+          echo ::set-output name=tf_apply::"${tf_apply}"
+
+          if [ "$exit_code" != "0" ]; then
+            echo "Stopping now, exit code of terraform apply was $exit_code" >&2
+            exit 1
+          fi
+        env:
+          ARTIFACT_PATH: ${{ steps.download_artifact.outputs.path }}
+          TF_VAR_github_token: ${{ secrets.GH_TOKEN }}
+
+      - name: Retrieve the comment id where the plan was shown
+        id: plan_comment_id
+        if: steps.apply_command.outputs.triggered == 'true'
+        run: |
+          echo $ARTIFACT_PATH && ls -al $ARTIFACT_PATH
+          echo ::set-output name=comment_id::"$(cat $ARTIFACT_PATH/comment_id)"
+        env:
+          ARTIFACT_PATH: ${{ steps.download_artifact.outputs.path }}
+
+      # Update the comment that was first created in
+      # 'empty_comment_terraform_apply' with an empty body. We now want to
+      # add the output of 'terraform_apply' to that comment. We display
+      # that output even when 'terraform_apply' fails.
+      - run: |
+          curl -X PATCH -d "{\"body\": $(echo "$BODY" | jq -R --slurp ".")}" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/${{github.repository}}/issues/comments/${{steps.empty_comment_terraform_apply.outputs.id}}
+        if: steps.apply_command.outputs.triggered == 'true' && always() && steps.terraform_apply.outputs.was_run == 'true'
+        id: comment_terraform_apply
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: |
+            The `terraform apply` was run [in this job](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}). The `tf.plan` used is the one in [this comment (above)](https://github.com/${{github.repository}}/pull/${{github.event.issue.number}}#issuecomment-${{steps.plan_comment_id.outputs.comment_id}}); the `tf.plan` applied can be downloaded in [this job's artifacts](https://github.com/${{github.repository}}/actions/runs/${{steps.last_pr_run.outputs.run_id}}) (see the artifact at the top-right corner).
+
+            Exit code of `terraform apply` was ${{ steps.terraform_apply.outputs.exit_code }} and output (stderr and stdout combined) is:
+
+            ```
+            ${{ steps.terraform_apply.outputs.tf_apply }}
+            ```
+
+            It is possible to re-run `/apply` in this PR. You can also force recreating a new plan by either:
+            - re-create a plan by pushing an empty commit (`git commit --allow-empty -m "trigger"`);
+            - or you might need to ask to one of the code owners to `terraform apply` manually.

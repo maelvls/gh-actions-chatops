@@ -1,0 +1,128 @@
+name: CI
+
+# Github Secrets:
+#  - GCP_SA_KEY contains the base64-encoded json key. The service account
+#    is create with the 'objectAdmin' role on gs://tfstate-gh; that can be
+#    done with
+#
+#      gcloud projects create tfstate750
+#      gcloud alpha billing projects link tfstate750 --billing-account $(gcloud alpha billing accounts list --uri)
+#      gsutil mb gs://tfstate-gh
+#      gcloud iam service-accounts create tfstate-sa --project=tfstate750 --display-name tfstate-sa --description "CI access to gs://tfstate-gh"
+#      gsutil iam ch serviceAccount:tfstate-sa@tfstate750.iam.gserviceaccount.com:objectAdmin gs://tfstate-gh
+#      gcloud iam service-accounts keys create /dev/stdout --iam-account tfstate-sa@tfstate750.iam.gserviceaccount.com | base64 > key
+#
+#    and finally copy the content of 'key' to the Github secret GCP_SA_KEY.
+#
+#  - GCP_SA_EMAIL contains the serviceaccount email. From the above
+#    example, the email would be:
+#
+#      tfstate-sa@tfstate750.iam.gserviceaccount.com
+#
+#  - GH_TOKEN is a personal access token that has the 'public_repo' scope.
+#    It is used so that terraform can perform operations on this repo's
+#    description.
+
+on:
+  pull_request:
+
+jobs:
+  terraform-plan:
+    name: "terraform plan"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
+        with:
+          # terraform init still relies on the deprecated
+          # ~/.config/gcloud/application_default_credentials.json, so we
+          # need to tell the action that it should generate it.
+          export_default_credentials: true
+          service_account_email: ${{ secrets.GCP_SA_EMAIL }}
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+
+      - run: |
+          LATEST=$(curl -s https://checkpoint-api.hashicorp.com/v1/check/terraform | jq -r -M '.current_version')
+          curl -sOL "https://releases.hashicorp.com/terraform/${LATEST}/terraform_${LATEST}_linux_amd64.zip"
+          unzip *.zip
+          sudo install terraform /usr/bin/terraform
+
+      - run: terraform fmt -diff -check -recursive .
+
+      # Since terraform plan may be slow, we want to show a message that
+      # says that the command is being run.
+      - uses: jungwinter/comment@v1
+        id: initial_comment_with_plan
+        with:
+          type: create
+          issue_number: ${{ toJson(github.event.number) }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            The terraform plan is being run [in this job](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}).
+
+            :hourglass_flowing_sand: Command is running... The plan will be shown here after it is done.
+
+      - run: terraform init
+        env:
+          TF_VAR_github_token: ${{ secrets.GITHUB_PAT }}
+
+      - run: |
+          terraform plan -parallelism=128 -out=tf.plan
+        env:
+          TF_VAR_github_token: ${{ secrets.GITHUB_PAT }}
+
+      # We want to show the terraform plan in a PR comment. First, let us
+      # put that plan in a "Github Actions variable" (that's the only
+      # interpolation allowed in harupy/comment-on-pr@master's msg field).
+      #
+      # And since the plan is a multi-line string and that "::set-output"
+      # doesn't expect newlines, we escape them. See:
+      # https://github.community/t5/GitHub-Actions/set-output-Truncates-Multiline-Strings/td-p/37870
+      - id: vars_for_pr_comment
+        if: always()
+        run: |
+          tf_plan="$(terraform show tf.plan -no-color)"
+          tf_plan="${tf_plan//'%'/'%25'}"
+          tf_plan="${tf_plan//$'\n'/'%0A'}"
+          tf_plan="${tf_plan//$'\r'/'%0D'}"
+          echo ::set-output name=tf_plan::"${tf_plan}"
+
+      # Fill the comment created in initial_comment_with_plan with the
+      # output of terraform plan. We want it to always run, even if
+      # terraform plan failed.
+      - uses: jungwinter/comment@v1
+        if: always()
+        id: create_comment_with_plan
+        with:
+          type: edit
+          comment_id: ${{ steps.initial_comment_with_plan.outputs.id }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            The terraform plan `tf.plan` has been uploaded as a Github artifact in [this job](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}). Here is the plan:
+
+            ```
+            ${{ steps.vars_for_pr_comment.outputs.tf_plan }}
+            ```
+
+            As soon as the PR is approved, anyone can run `/apply`. The `/apply` command will apply the last plan shown in this PR using the `tf.plan` that was [uploaded as a Github artifact](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}). The output of `terraform apply` will be shown in a PR comment.
+
+      # In case terraform apply fails mid-way, we can still download
+      # tf.plan and re-run it locally.
+      #
+      # Also use by the "/apply command" workflow.
+      - uses: actions/upload-artifact@v2-preview
+        with:
+          name: tf_plan
+          path: tf.plan
+
+      # (Appends to the tf_plan archive) Add the comment id so that we can
+      # show a link to the comment where this tf.plan has been diplayed.
+      # The comment_id file allows you to use the url:
+      # https://github.com/${{github.repository}}/pull/38#issuecomment-$comment_id
+      - run: |
+          echo "${{ steps.initial_comment_with_plan.outputs.id }}" > comment_id
+      - uses: actions/upload-artifact@v2-preview
+        with:
+          name: tf_plan
+          path: comment_id
