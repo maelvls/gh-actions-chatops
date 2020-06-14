@@ -17,6 +17,10 @@ It goes like this:
    approved this PR.
 1. Merging the PR does not trigger anything else.
 
+> ⚠ Fork PRs: Since I use `GITHUB_TOKEN` to create/update the bot's
+> comments, it won't work for PRs created from forks (see [GITHUB_TOKEN
+> restrictions](https://help.github.com/en/actions/configuring-and-managing-workflows/authenticating-with-the-github_token#permissions-for-the-github_token))
+
 Here is what it looks like in a
 [live PR](https://github.com/maelvls/gh-actions-chatops/pull/4):
 
