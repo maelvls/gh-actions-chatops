@@ -18,6 +18,6 @@ It goes like this:
 1. Merging the PR does not trigger anything else.
 
 Here is what it looks like in a
-[PR](https://github.com/maelvls/gh-actions-chatops/pull/1):
+[live PR](https://github.com/maelvls/gh-actions-chatops/pull/4):
 
 ![Update static_site tf by hellyesican · Pull Request #4 · maelvlsgh-actions-chatops 2](https://user-images.githubusercontent.com/2195781/84599006-2abf3b80-ae6f-11ea-9372-c9dae9dc0b67.png)
