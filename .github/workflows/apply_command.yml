@@ -1,7 +1,7 @@
-name: CI
+name: commands
 
-# Github Secrets: GCP_SA_KEY, GCP_SA_EMAIL, GH_TOKEN. See apply_commands.yml for
-# more info.
+# Github Secrets: GCP_SA_KEY, GCP_SA_EMAIL, GH_TOKEN. See ci.yml for more
+# info.
 
 on:
   issue_comment:

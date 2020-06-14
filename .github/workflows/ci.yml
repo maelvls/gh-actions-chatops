@@ -1,4 +1,4 @@
-name: CI
+name: ci
 
 # Github Secrets:
 #  - GCP_SA_KEY contains the base64-encoded json key. The service account
@@ -21,7 +21,8 @@ name: CI
 #
 #  - GH_TOKEN is a personal access token that has the 'public_repo' scope.
 #    It is used so that terraform can perform operations on this repo's
-#    description.
+#    description. Note that the default token, GITHUB_TOKEN, can't be used for
+#    some operations, that's why I have to create my own.
 
 on:
   pull_request:

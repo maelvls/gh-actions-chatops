@@ -1,11 +1,21 @@
 # Terraform ChatOps using Github Actions
 
-- ChatOps-based workflow inspired by [Prow](https://github.com/kubernetes/test-infra/tree/master/prow).
-- When a PR is opened, `terraform plan` is run and shown as a PR comment.
-- If `/apply` is sent as a comment in that PR, `terraform apply` is run.
-- The `/apply` command only works after someone from the CODEOWNERS has
-  approved this PR.
-- Merging the PR does not trigger anything else.
+This repo shows a simple `static_site.tf` that creates an tiny
+[index.html](https://storage.googleapis.com/my-static-site/index.html)
+using a GCP bucket. Instead of calling `terraform apply` locally (on the
+developer's laptop) or on some CI, we want to give a bit more interactivity
+and use the "ChatOps" approach which brings a higher level of transparency
+(who did what and when). This idea comes from using
+[Prow](https://github.com/kubernetes/test-infra/tree/master/prow), the
+ChatOps bot that powers all Kubernetes repositories.
+
+It goes like this:
+
+1. When a PR is opened, `terraform plan` is run and shown as a PR comment.
+1. If `/apply` is sent as a comment in that PR, `terraform apply` is run.
+1. The `/apply` command only works after someone from the `CODEOWNERS` has
+   approved this PR.
+1. Merging the PR does not trigger anything else.
 
 Here is what it looks like in a
 [PR](https://github.com/maelvls/gh-actions-chatops/pull/1):
