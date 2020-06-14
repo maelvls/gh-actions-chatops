@@ -9,7 +9,7 @@ on:
 
 jobs:
   ci:
-    name: "/apply command"
+    name: apply_command
     runs-on: ubuntu-latest
     steps:
       # Check if /apply was issued. If /apply was not issued, all the
