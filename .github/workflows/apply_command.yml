@@ -3,6 +3,9 @@ name: commands
 # Github Secrets: GCP_SA_KEY, GCP_SA_EMAIL, GH_TOKEN. See ci.yml for more
 # info.
 
+# Watch out! Since this is triggered on issue_comment, CI will always use
+# the code on the master branch, NOT the code in your PR!
+
 on:
   issue_comment:
     types: [created]

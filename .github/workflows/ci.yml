@@ -58,7 +58,7 @@ jobs:
         with:
           type: create
           issue_number: ${{ toJson(github.event.number) }}
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             The terraform plan is being run [in this job](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}).
 
@@ -98,7 +98,7 @@ jobs:
         with:
           type: edit
           comment_id: ${{ steps.initial_comment_with_plan.outputs.id }}
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             The terraform plan `tf.plan` has been uploaded as a Github artifact in [this job](https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}). Here is the plan:
 
