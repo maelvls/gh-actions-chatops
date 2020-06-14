@@ -112,7 +112,7 @@ jobs:
       # tf.plan and re-run it locally.
       #
       # Also use by the "/apply command" workflow.
-      - uses: actions/upload-artifact@v2-preview
+      - uses: actions/upload-artifact@v2
         with:
           name: tf_plan
           path: tf.plan
@@ -123,7 +123,7 @@ jobs:
       # https://github.com/${{github.repository}}/pull/38#issuecomment-$comment_id
       - run: |
           echo "${{ steps.initial_comment_with_plan.outputs.id }}" > comment_id
-      - uses: actions/upload-artifact@v2-preview
+      - uses: actions/upload-artifact@v2
         with:
           name: tf_plan
           path: comment_id
