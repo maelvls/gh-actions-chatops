@@ -65,12 +65,12 @@ jobs:
 
       - run: terraform init
         env:
-          TF_VAR_github_token: ${{ secrets.GITHUB_PAT }}
+          TF_VAR_github_token: ${{ secrets.GH_TOKEN }}
 
       - run: |
           terraform plan -parallelism=128 -out=tf.plan
         env:
-          TF_VAR_github_token: ${{ secrets.GITHUB_PAT }}
+          TF_VAR_github_token: ${{ secrets.GH_TOKEN }}
 
       # We want to show the terraform plan in a PR comment. First, let us
       # put that plan in a "Github Actions variable" (that's the only
