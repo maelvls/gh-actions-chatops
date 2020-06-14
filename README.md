@@ -20,4 +20,4 @@ It goes like this:
 Here is what it looks like in a
 [PR](https://github.com/maelvls/gh-actions-chatops/pull/1):
 
-<img width="751" alt="This image is stored in the description of https://github.com/maelvls/gh-actions-chatops/issues/2" src="https://user-images.githubusercontent.com/2195781/81424107-b5689880-9155-11ea-8b2e-a4a0dce10365.png">
+![Update static_site tf by hellyesican · Pull Request #4 · maelvlsgh-actions-chatops 2](https://user-images.githubusercontent.com/2195781/84599006-2abf3b80-ae6f-11ea-9372-c9dae9dc0b67.png)
