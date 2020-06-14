@@ -38,5 +38,5 @@ resource "google_storage_bucket" "static_site" {
 resource "google_storage_bucket_object" "index_html" {
   bucket  = google_storage_bucket.static_site.name
   name    = "index.html"
-  content = "😅"
+  content = "ahah! 😅"
 }
